@@ -40,11 +40,8 @@ app.post("/score", (req, res) => {
 
 // SERVER START
 app.listen(3000, () => {
-    console.log("Server running on http://localhost:3000");
-});
+    console.log("Server running on https://web-game-backend.onrender.com/");
+    
 app.get("/", (req, res) => {
-    res.send("Backend is running");
-});
-app.get("/", (req, res) => {
-    res.send("Backend is running");
+  res.json({ status: "Backend running" });
 });

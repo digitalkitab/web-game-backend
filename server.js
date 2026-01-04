@@ -1,15 +1,24 @@
 const express = require("express");
 const cors = require("cors");
+const bcrypt = require("bcryptjs");
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
 /* ======================
+   ADMIN SECRET
+====================== */
+const ADMIN_SECRET = "admin@ak47$pawan";
+
+/* ======================
    IN-MEMORY DATABASE
 ====================== */
 let users = [
-  { username: "admin", password: "admin123" }
+  {
+    username: "admin",
+    password: bcrypt.hashSync("admin123", 10)
+  }
 ];
 
 let forgotRequests = [];
@@ -17,24 +26,26 @@ let forgotRequests = [];
 /* ======================
    LOGIN
 ====================== */
-app.post("/login", (req, res) => {
+app.post("/login", async (req, res) => {
   const { username, password } = req.body;
 
-  const user = users.find(
-    u => u.username === username && u.password === password
-  );
-
-  if (user) {
-    res.json({ success: true });
-  } else {
-    res.json({ success: false });
+  const user = users.find(u => u.username === username);
+  if (!user) {
+    return res.json({ success: false });
   }
+
+  const ok = await bcrypt.compare(password, user.password);
+  if (!ok) {
+    return res.json({ success: false });
+  }
+
+  res.json({ success: true });
 });
 
 /* ======================
-   SIGNUP
+   SIGNUP (HASHED)
 ====================== */
-app.post("/signup", (req, res) => {
+app.post("/signup", async (req, res) => {
   const { username, password } = req.body;
 
   if (!username || !password) {
@@ -46,9 +57,10 @@ app.post("/signup", (req, res) => {
     return res.json({ success: false, message: "Username already exists" });
   }
 
-  users.push({ username, password });
-  console.log("New user:", username);
+  const hashed = await bcrypt.hash(password, 10);
+  users.push({ username, password: hashed });
 
+  console.log("New secure user:", username);
   res.json({ success: true });
 });
 
@@ -69,16 +81,27 @@ app.post("/forgot-password", (req, res) => {
 });
 
 /* ======================
+   ADMIN AUTH MIDDLEWARE
+====================== */
+function adminAuth(req, res, next) {
+  const secret = req.headers["x-admin-secret"];
+  if (secret !== ADMIN_SECRET) {
+    return res.status(401).json({ success: false });
+  }
+  next();
+}
+
+/* ======================
    ADMIN – VIEW REQUESTS
 ====================== */
-app.get("/admin/forgot-requests", (req, res) => {
+app.get("/admin/forgot-requests", adminAuth, (req, res) => {
   res.json(forgotRequests);
 });
 
 /* ======================
    ADMIN – RESET PASSWORD
 ====================== */
-app.post("/admin/reset-password", (req, res) => {
+app.post("/admin/reset-password", adminAuth, async (req, res) => {
   const { username, newPassword } = req.body;
 
   const user = users.find(u => u.username === username);
@@ -86,8 +109,8 @@ app.post("/admin/reset-password", (req, res) => {
     return res.json({ success: false });
   }
 
-  user.password = newPassword;
-  console.log("Password reset:", username);
+  user.password = await bcrypt.hash(newPassword, 10);
+  console.log("Admin reset password:", username);
 
   res.json({ success: true });
 });
@@ -97,5 +120,5 @@ app.post("/admin/reset-password", (req, res) => {
 ====================== */
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log("Backend running on port", PORT);
+  console.log("Secure backend running on port", PORT);
 });

@@ -1,63 +1,62 @@
 const express = require("express");
-const fs = require("fs");
 const cors = require("cors");
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-const USERS_FILE = "./users.json";
+/* ======================
+   IN-MEMORY DATABASE
+====================== */
+let users = [
+  { username: "admin", password: "admin123" }
+];
 
-/* ROOT CHECK */
-app.get("/", (req, res) => {
-  res.json({ status: "Backend running" });
-});
+let forgotRequests = [];
 
-/* LOGIN */
+/* ======================
+   LOGIN
+====================== */
 app.post("/login", (req, res) => {
   const { username, password } = req.body;
-  const users = JSON.parse(fs.readFileSync(USERS_FILE, "utf8"));
 
   const user = users.find(
     u => u.username === username && u.password === password
   );
 
-  res.json({ success: !!user });
+  if (user) {
+    res.json({ success: true });
+  } else {
+    res.json({ success: false });
+  }
 });
 
-/* SAVE SCORE */
-app.post("/score", (req, res) => {
-  const { username, score } = req.body;
-  const users = JSON.parse(fs.readFileSync(USERS_FILE, "utf8"));
+/* ======================
+   SIGNUP
+====================== */
+app.post("/signup", (req, res) => {
+  const { username, password } = req.body;
 
-  const user = users.find(u => u.username === username);
-  if (user && score > user.highScore) {
-    user.highScore = score;
-    fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
+  if (!username || !password) {
+    return res.json({ success: false, message: "Missing fields" });
   }
+
+  const exists = users.find(u => u.username === username);
+  if (exists) {
+    return res.json({ success: false, message: "Username already exists" });
+  }
+
+  users.push({ username, password });
+  console.log("New user:", username);
 
   res.json({ success: true });
 });
 
-/* LEADERBOARD */
-app.get("/leaderboard", (req, res) => {
-  const users = JSON.parse(fs.readFileSync(USERS_FILE, "utf8"));
-  users.sort((a, b) => b.highScore - a.highScore);
-  res.json(users);
-});
-
-/* IMPORTANT: PORT FIX FOR RENDER */
-const PORT = process.env.PORT || 3000;
-
-app.listen(PORT, () => {
-  console.log("Server running on port", PORT);
-});
-
-let forgotRequests = [];
-
+/* ======================
+   FORGOT PASSWORD
+====================== */
 app.post("/forgot-password", (req, res) => {
   const { username } = req.body;
-  if (!username) return res.json({ success: false });
 
   forgotRequests.push({
     username,
@@ -65,18 +64,38 @@ app.post("/forgot-password", (req, res) => {
     status: "pending"
   });
 
-  console.log("Forgot password request:", username);
+  console.log("Forgot request:", username);
   res.json({ success: true });
 });
 
+/* ======================
+   ADMIN – VIEW REQUESTS
+====================== */
 app.get("/admin/forgot-requests", (req, res) => {
   res.json(forgotRequests);
 });
 
-app.post("/admin/forgot-done", (req, res) => {
-  const { index } = req.body;
-  if (forgotRequests[index]) {
-    forgotRequests[index].status = "done";
+/* ======================
+   ADMIN – RESET PASSWORD
+====================== */
+app.post("/admin/reset-password", (req, res) => {
+  const { username, newPassword } = req.body;
+
+  const user = users.find(u => u.username === username);
+  if (!user) {
+    return res.json({ success: false });
   }
+
+  user.password = newPassword;
+  console.log("Password reset:", username);
+
   res.json({ success: true });
+});
+
+/* ======================
+   START SERVER
+====================== */
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log("Backend running on port", PORT);
 });

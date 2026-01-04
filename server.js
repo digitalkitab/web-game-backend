@@ -52,3 +52,31 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log("Server running on port", PORT);
 });
+
+let forgotRequests = [];
+
+app.post("/forgot-password", (req, res) => {
+  const { username } = req.body;
+  if (!username) return res.json({ success: false });
+
+  forgotRequests.push({
+    username,
+    time: new Date().toLocaleString(),
+    status: "pending"
+  });
+
+  console.log("Forgot password request:", username);
+  res.json({ success: true });
+});
+
+app.get("/admin/forgot-requests", (req, res) => {
+  res.json(forgotRequests);
+});
+
+app.post("/admin/forgot-done", (req, res) => {
+  const { index } = req.body;
+  if (forgotRequests[index]) {
+    forgotRequests[index].status = "done";
+  }
+  res.json({ success: true });
+});

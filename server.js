@@ -7,7 +7,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const ADMIN_SECRET = "admin@ak47$pawan";
+const ADMIN_SECRET = process.env.ADMIN_SECRET;
 
 /* ===== MONGODB CONNECT ===== */
 mongoose.connect(process.env.MONGO_URI)
@@ -96,3 +96,4 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log("🚀 Secure backend running on port", PORT);
 });
+

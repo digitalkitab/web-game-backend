@@ -7,118 +7,156 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-/* ===== MONGODB CONNECT ===== */
+/* ================== MONGODB ================== */
 mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log("✅ MongoDB connected"))
   .catch(err => console.log("❌ MongoDB error:", err.message));
 
-/* ===== SCHEMAS ===== */
+/* ================== SCHEMAS ================== */
+
+// Approved users
 const UserSchema = new mongoose.Schema({
-  username: { type: String, required: true, unique: true },
-  email:    { type: String, required: true, unique: true },
-  phone:    { type: String, required: true },
-  password: { type: String, required: true },
+  username: String,
+  email: String,
+  phone: String,
+  password: String,
   approved: { type: Boolean, default: false }
 });
 
+// Signup approval requests
+const SignupRequestSchema = new mongoose.Schema({
+  username: String,
+  email: String,
+  phone: String,
+  password: String,
+  createdAt: { type: Date, default: Date.now }
+});
+
+// Forgot password requests
 const ForgotSchema = new mongoose.Schema({
   username: String,
-  time: String,
-  status: String
+  createdAt: { type: Date, default: Date.now },
+  status: { type: String, default: "pending" }
 });
 
 const User = mongoose.model("User", UserSchema);
+const SignupRequest = mongoose.model("SignupRequest", SignupRequestSchema);
 const Forgot = mongoose.model("Forgot", ForgotSchema);
 
-/* ===== SIGNUP ===== */
-app.post("/signup", async (req, res) => {
-  try {
-    const { username, email, phone, password } = req.body;
+/* ================== AUTH ================== */
 
-    if (!username || !email || !phone || !password) {
-      return res.status(400).json({ success: false, message: "All fields required" });
-    }
-
-    const exists = await User.findOne({ $or: [{ username }, { email }] });
-    if (exists) {
-      return res.status(400).json({ success: false, message: "User already exists" });
-    }
-
-    const hash = await bcrypt.hash(password, 10);
-
-    await User.create({
-      username,
-      email,
-      phone,
-      password: hash,
-      approved: false
-    });
-
-    res.json({ success: true });
-
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ success: false });
-  }
-});
-
-/* ===== LOGIN ===== */
+// LOGIN (only approved users)
 app.post("/login", async (req, res) => {
-  try {
-    const { username, password } = req.body;
+  const { username, password } = req.body;
 
-    const user = await User.findOne({ username });
-    if (!user) return res.json({ success: false });
+  const user = await User.findOne({ username });
+  if (!user) return res.json({ success: false, message: "Invalid login" });
 
-    const ok = await bcrypt.compare(password, user.password);
-    if (!ok) return res.json({ success: false });
+  const ok = await bcrypt.compare(password, user.password);
+  if (!ok) return res.json({ success: false, message:_toggle });
 
-    if (!user.approved) {
-      return res.json({ success: false, message: "Waiting for admin approval" });
-    }
-
-    res.json({ success: true });
-
-  } catch {
-    res.status(500).json({ success: false });
+  if (!user.approved) {
+    return res.json({ success: false, message: "Waiting for admin approval" });
   }
+
+  res.json({ success: true });
 });
 
-/* ===== FORGOT PASSWORD ===== */
-app.post("/forgot-password", async (req, res) => {
-  await Forgot.create({
-    username: req.body.username,
-    time: new Date().toLocaleString(),
-    status: "pending"
+/* ================== SIGNUP ================== */
+
+// Create signup request (NOT direct user)
+app.post("/signup", async (req, res) => {
+  const { username, email, phone, password } = req.body;
+
+  if (!username || !email || !phone || !password) {
+    return res.json({ success: false, message: "All fields required" });
+  }
+
+  const exists =
+    await User.findOne({ username }) ||
+    await SignupRequest.findOne({ username });
+
+  if (exists) {
+    return res.json({ success: false, message: "User already exists" });
+  }
+
+  const hash = await bcrypt.hash(password, 10);
+
+  await SignupRequest.create({
+    username,
+    email,
+    phone,
+    password: hash
   });
+
+  res.json({
+    success: true,
+    message: "Account created, waiting for admin approval"
+  });
+});
+
+/* ================== FORGOT PASSWORD ================== */
+
+// User sends forgot request
+app.post("/forgot-password", async (req, res) => {
+  const { username } = req.body;
+  if (!username) return res.json({ success: false });
+
+  await Forgot.create({ username });
   res.json({ success: true });
 });
 
-/* ===== ADMIN: PENDING USERS ===== */
-app.get("/admin/pending-users", async (req, res) => {
-  try {
-    const users = await User.find({ approved: false }).select("-password");
-    res.json(users);
-  } catch {
-    res.status(500).json([]);
-  }
+/* ================== ADMIN ================== */
+
+// Get all pending signup requests
+app.get("/admin/signup-requests", async (req, res) => {
+  const list = await SignupRequest.find().sort({ _id: -1 });
+  res.json(list);
 });
 
-/* ===== ADMIN: APPROVE USER ===== */
-app.post("/admin/approve-user", async (req, res) => {
-  const { userId } = req.body;
-  await User.findByIdAndUpdate(userId, { approved: true });
+// Approve signup
+app.post("/admin/approve-signup", async (req, res) => {
+  const { id } = req.body;
+
+  const reqq = await SignupRequest.findById(id);
+  if (!reqq) return res.json({ success: false });
+
+  await User.create({
+    username: reqq.username,
+    email: reqq.email,
+    phone: reqq.phone,
+    password: reqq.password,
+    approved: true
+  });
+
+  await SignupRequest.findByIdAndDelete(id);
   res.json({ success: true });
 });
 
-/* ===== ADMIN: REJECT USER ===== */
-app.post("/admin/reject-user", async (req, res) => {
-  const { userId } = req.body;
-  await User.findByIdAndDelete(userId);
+// Reject signup
+app.post("/admin/reject-signup", async (req, res) => {
+  await SignupRequest.findByIdAndDelete(req.body.id);
   res.json({ success: true });
 });
 
-/* ===== START ===== */
+// Forgot password requests (admin panel)
+app.get("/admin/forgot-requests", async (req, res) => {
+  const list = await Forgot.find().sort({ _id: -1 });
+  res.json(list);
+});
+
+// Admin resets password
+app.post("/admin/reset-password", async (req, res) => {
+  const { username, newPassword } = req.body;
+
+  const hash = await bcrypt.hash(newPassword, 10);
+  await User.findOneAndUpdate({ username }, { password: hash });
+
+  await Forgot.deleteOne({ username });
+  res.json({ success: true });
+});
+
+/* ================== START ================== */
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log("🚀 Backend running on port", PORT);

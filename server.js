@@ -8,7 +8,8 @@ app.use(cors());
 app.use(express.json());
 
 /* ================== MONGODB ================== */
-mongoose.connect(process.env.MONGO_URI)
+mongoose
+  .connect(process.env.MONGO_URI)
   .then(() => console.log("✅ MongoDB connected"))
   .catch(err => console.log("❌ MongoDB error:", err.message));
 
@@ -45,40 +46,41 @@ const Forgot = mongoose.model("Forgot", ForgotSchema);
 
 /* ================== AUTH ================== */
 
-// LOGIN (only approved users)
+// LOGIN (approved users only)
 app.post("/login", async (req, res) => {
   const { username, password } = req.body;
 
   const user = await User.findOne({ username });
-  if (!user) return res.json({ success: false, message: "Invalid login" });
+  if (!user)
+    return res.json({ success: false, message: "User not found" });
 
   const ok = await bcrypt.compare(password, user.password);
-  if (!ok) return res.json({ success: false, message:_toggle });
+  if (!ok)
+    return res.json({ success: false, message: "Wrong password" });
 
-  if (!user.approved) {
-    return res.json({ success: false, message: "Waiting for admin approval" });
-  }
+  if (!user.approved)
+    return res.json({
+      success: false,
+      message: "Waiting for admin approval"
+    });
 
   res.json({ success: true });
 });
 
 /* ================== SIGNUP ================== */
 
-// Create signup request (NOT direct user)
 app.post("/signup", async (req, res) => {
   const { username, email, phone, password } = req.body;
 
-  if (!username || !email || !phone || !password) {
+  if (!username || !email || !phone || !password)
     return res.json({ success: false, message: "All fields required" });
-  }
 
   const exists =
-    await User.findOne({ username }) ||
-    await SignupRequest.findOne({ username });
+    (await User.findOne({ username })) ||
+    (await SignupRequest.findOne({ username }));
 
-  if (exists) {
+  if (exists)
     return res.json({ success: false, message: "User already exists" });
-  }
 
   const hash = await bcrypt.hash(password, 10);
 
@@ -91,16 +93,20 @@ app.post("/signup", async (req, res) => {
 
   res.json({
     success: true,
-    message: "Account created, waiting for admin approval"
+    message: "Signup request sent for admin approval"
   });
 });
 
 /* ================== FORGOT PASSWORD ================== */
 
-// User sends forgot request
 app.post("/forgot-password", async (req, res) => {
   const { username } = req.body;
-  if (!username) return res.json({ success: false });
+  if (!username)
+    return res.json({ success: false, message: "Username required" });
+
+  const already = await Forgot.findOne({ username });
+  if (already)
+    return res.json({ success: false, message: "Request already sent" });
 
   await Forgot.create({ username });
   res.json({ success: true });
@@ -108,7 +114,7 @@ app.post("/forgot-password", async (req, res) => {
 
 /* ================== ADMIN ================== */
 
-// Get all pending signup requests
+// Signup requests
 app.get("/admin/signup-requests", async (req, res) => {
   const list = await SignupRequest.find().sort({ _id: -1 });
   res.json(list);
@@ -139,25 +145,25 @@ app.post("/admin/reject-signup", async (req, res) => {
   res.json({ success: true });
 });
 
-// Forgot password requests (admin panel)
+// Forgot password requests
 app.get("/admin/forgot-requests", async (req, res) => {
   const list = await Forgot.find().sort({ _id: -1 });
   res.json(list);
 });
 
-// Admin resets password
+// Reset password
 app.post("/admin/reset-password", async (req, res) => {
   const { username, newPassword } = req.body;
 
   const hash = await bcrypt.hash(newPassword, 10);
   await User.findOneAndUpdate({ username }, { password: hash });
-
   await Forgot.deleteOne({ username });
+
   res.json({ success: true });
 });
 
 /* ================== START ================== */
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log("🚀 Backend running on port", PORT);
-});
+app.listen(PORT, () =>
+  console.log("🚀 Backend running on port", PORT)
+);
